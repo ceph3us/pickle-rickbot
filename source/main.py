@@ -16,7 +16,7 @@ logger.addHandler(handler)
 description = '''I'm Pickle Rickbot!!'''
 
 # this specifies what extensions to load when the bot starts up
-startup_extensions = ["general", "moderator", "music", "admin"]
+startup_extensions = ["general", "moderator", "music", "admin", "api_search"]
 
 bot = commands.Bot(command_prefix='!', description="I'm Pickle Rickbot!")
 
