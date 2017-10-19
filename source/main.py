@@ -109,4 +109,4 @@ if __name__ == "__main__":
     bot.loop.create_task(auto_bump_hound())
     bot.loop.create_task(auto_bump_dlm())
     bot.loop.create_task(website_integration())
-    bot.run('')
+    bot.run('MzY5MTEyNDQzMjYxMjg4NDY4.DMTy4Q.Th9eqlkjkhrX5eN9YQJzMr48xc4')

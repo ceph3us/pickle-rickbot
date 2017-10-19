@@ -7,7 +7,7 @@ import async_timeout
 from bs4 import BeautifulSoup
 from bs4.element import Tag, NavigableString
 
-from .base import SearchProvider, update_query_string
+from .base import SearchProvider, update_query_string, Formatter
 
 
 class MDNPageParseException(Exception):
@@ -49,48 +49,6 @@ def match_method(string: str, results: dict):
     return list(filter(_is_same_method(string), results['documents']))
 
 
-def parse_section_recursive(element):
-    # Maintain list of section changes
-    remove = []
-    update = {}
-    values = dict(zip(
-        map(lambda dt: dt.find('code').string, element.find_all('dt', recursive=False)),
-        element.find_all('dd', recursive=False)))
-    for k, v in values.items():
-        sub_list = v.find('dl')
-        if sub_list is not None:
-            values[k] = {
-                'text': ' '.join([s for s in v.children if type(s) == NavigableString]).strip(),
-                'values': parse_section_recursive(sub_list)
-            }
-        else:
-            values[k] = {'text': ''.join([str(s) for s in v.children])}
-
-        values[k]['text'] = replace_mdn_formatting(values[k]['text'])
-
-        if k.find('{{Optional_inline}}') != -1:
-            values[k]['optional'] = True
-            new_k = k.replace('{{Optional_inline}}', '').strip()
-            update[new_k] = values[k]
-            remove.append(k)
-
-    for k in remove:
-        del values[k]
-
-    for k, v in update.items():
-        values[k] = v
-
-    return values
-
-
-def replace_mdn_formatting(string):
-    string = re.sub(r"<code>(<strong>)?(.+?)(</strong>)?</code>", r"`\2`", string)
-    string = re.sub(r"<code>(<strong>)?(.+?)(</strong>)?</code>", r"`\2`", string)
-    string = re.sub(r"<a(.*?)>(.*?)</a>", r"\2", string)
-    string = re.sub(r"({{)?\W*?(.+)xref\(\"(.+?)\"\)\W*?(}})?", r"`\3`", string)
-    string = re.sub(r"({{)?\W*?Glossary\(\"(.+?)\"\)\W*?(}})?", r"*\2*", string)
-
-    return string
 
 
 class MDNSearchProvider(SearchProvider):
@@ -101,14 +59,58 @@ class MDNSearchProvider(SearchProvider):
 
     search_url = None
 
-    def __init__(self, base_url_override=''):
+    def __init__(self, formatter=Formatter(), base_url_override=''):
+        super().__init__(formatter)
         if base_url_override != '':
             self.url_base = base_url_override
 
         self.search_url = urlparse(self.url_base + self._search_suffix)
 
-    @staticmethod
-    def parse_method_info(document):
+    def parse_section_recursive(self, element):
+        # Maintain list of section changes
+        remove = []
+        update = {}
+        values = dict(zip(
+            map(lambda dt: dt.find('code').string, element.find_all('dt', recursive=False)),
+            element.find_all('dd', recursive=False)))
+        for k, v in values.items():
+            sub_list = v.find('dl')
+            if sub_list is not None:
+                values[k] = {
+                    'text': ' '.join([s for s in v.children if type(s) == NavigableString]).strip(),
+                    'values': self.parse_section_recursive(sub_list)
+                }
+            else:
+                values[k] = {'text': ''.join([str(s) for s in v.children])}
+
+            values[k]['text'] = self.replace_mdn_formatting(values[k]['text'])
+
+            if k.find('{{Optional_inline}}') != -1:
+                values[k]['optional'] = True
+                new_k = k.replace('{{Optional_inline}}', '').strip()
+                update[new_k] = values[k]
+                remove.append(k)
+
+        for k in remove:
+            del values[k]
+
+        for k, v in update.items():
+            values[k] = v
+
+        return values
+
+    def replace_mdn_formatting(self, string):
+        string = re.sub(r"<code>(<strong>)?(.+?)(</strong>)?</code>", self.formatter.inline_code(r"\2"), string)
+        string = re.sub(r"<code>(<strong>)?(.+?)(</strong>)?</code>", self.formatter.inline_code(r"\2"), string)
+        string = re.sub(r"<a(.*?)>(.*?)</a>", r"\2", string)
+        string = re.sub(r"({{)?\W*?(.+)xref\(\"(.+?)\"\)\W*?(}})?", self.formatter.inline_code(r"\3"), string)
+        string = re.sub(r"({{)?\W*?Glossary\(\"(.+?)\"\)\W*?(}})?", self.formatter.italics(r"\2"), string)
+        string = string.replace("\n", "")
+        string = re.sub(r"<br\W*?/?>", "\n", string)
+
+        return string
+
+    def parse_method_info(self, document):
         method_info = {}
         dom = BeautifulSoup(document, 'html.parser')
 
@@ -124,7 +126,7 @@ class MDNSearchProvider(SearchProvider):
                 raise MDNPageParseException("Invalid parameters format")
 
             if section_content.name == 'dl':
-                method_info['params'] = parse_section_recursive(section_content)
+                method_info['params'] = self.parse_section_recursive(section_content)
             else:
                 raise MDNPageParseException("Invalid parameters format")
         else:
@@ -146,9 +148,9 @@ class MDNSearchProvider(SearchProvider):
                 raise MDNPageParseException("Invalid return values format")
 
             if section_content.name == 'dl':
-                method_info['returns'] = parse_section_recursive(section_content)
+                method_info['returns'] = self.parse_section_recursive(section_content)
             else:
-                method_info['returns'] = replace_mdn_formatting(
+                method_info['returns'] = self.replace_mdn_formatting(
                     ''.join([str(s) for s in section_content.children]))
         else:
             method_info['returns'] = {}

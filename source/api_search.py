@@ -10,7 +10,7 @@ reload_mods = filter(lambda k: k.find('search_providers') != -1, list(modules.ke
 for mod in reload_mods:
     del modules[mod]
 
-from search_providers import MDNSearchProvider
+from search_providers import MDNSearchProvider, DiscordFormatter
 
 MDN_COLOUR = 0x83d0f2
 
@@ -43,7 +43,7 @@ class APISearch:
 
     def __init__(self, bot):
         self.bot = bot
-        self.mdnsearch = MDNSearchProvider()
+        self.mdnsearch = MDNSearchProvider(formatter=DiscordFormatter())
 
     @commands.command()
     async def mdn(self, *, search: str):
